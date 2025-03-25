@@ -253,41 +253,66 @@ export const getReferredUserData = catchAsyncError(async (req, res, next) => {
 export const Login = catchAsyncError(async (req, res, next) => {
   const { email, password } = req.body;
 
-  const user = await UserModel.findOne({ email }).select("+password");
-  if (!user) {
-    return next(new Errorhandler("User Not Found", 404));
+  // 1. Input validation
+  if (!email || !password) {
+    return next(new Errorhandler("Please provide email and password", 400));
   }
 
+  // 2. Find user with password
+  const user = await UserModel.findOne({ email }).select("+password +status");
+  if (!user) {
+    return next(new Errorhandler("Invalid Email or Password", 401)); // Generic message for security
+  }
+
+  // 3. Verify password
   const isMatch = await user.comparePassword(password);
   if (!isMatch) {
     return next(new Errorhandler("Invalid Email or Password", 401));
   }
 
-  // Check if the user is still pending verification
+  // 4. Handle unverified users
   if (user.status === "pending") {
-    await UserModel.findByIdAndDelete(user._id); // Delete the user
+    // Option 1: Resend verification instead of deleting
+    const otp = await user.generateOTP();
+    const subject = "Verify Your Email - BMX Adventure";
+    const text = generateEmailTemplate(user.name, otp);
+    await SendMail(user.email, subject, text);
+
     return next(
       new Errorhandler(
-        "Your account was not verified and has been deleted. Please sign up again.",
+        "Account not verified. A new OTP has been sent to your email.",
         403
       )
     );
+
+    // Option 2: If you must delete (not recommended):
+    // await UserModel.findByIdAndDelete(user._id);
+    // return next(new Errorhandler("Account not verified and has been deleted. Please sign up again.", 403));
   }
 
-  // Generate token for verified users
+  // 5. Generate token
   const token = user.getJWTToken();
-  res
-    .status(200)
-    .cookie("token", token, {
-      expires: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-      httpOnly: true,
-    })
-    .json({
-      success: true,
-      message: "User Logged In Successfully",
-      user,
-      token,
-    });
+
+  // 6. Set secure cookie
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    domain: process.env.COOKIE_DOMAIN || "bmx-atventure.vercel.app",
+    maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days to match token expiry
+  });
+
+  // 7. Remove sensitive data before sending response
+  user.password = undefined;
+  user.otp = undefined;
+  user.otpExpires = undefined;
+
+  // 8. Respond without token in body (since it's in cookie)
+  res.status(200).json({
+    success: true,
+    message: "Login successful",
+    user,
+  });
 });
 
 export const Logout = catchAsyncError(async (req, res, next) => {
