@@ -78,11 +78,13 @@ export const verifyUser = catchAsyncError(async (req, res, next) => {
     return next(new Errorhandler("Invalid or expired OTP", 400));
   }
 
+  // Update user verification status
   user.otp = undefined;
   user.otpExpires = undefined;
   user.status = "verified";
   await user.save();
 
+  // Assign referral points ONLY after verification
   if (user.referredBy) {
     const referredByUser = await UserModel.findById(user.referredBy);
     if (referredByUser) {
@@ -95,11 +97,12 @@ export const verifyUser = catchAsyncError(async (req, res, next) => {
   // Generate JWT token
   const token = user.getJWTToken();
 
+  // Correct cookie settings (domain without https://)
   res.cookie("token", token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', 
+    secure: true,
     sameSite: "none",
-    domain: ".bmx-atventure.vercel.app",
+    domain: "bmx-atventure.vercel.app", // Correct domain format
     maxAge: 60 * 60 * 1000,
   });
 
