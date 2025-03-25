@@ -21,7 +21,7 @@ app.use(
   cors({
     origin: "https://bmx-atventure.vercel.app",
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE"], // Add the required methods
+    methods: ["GET", "POST", "PUT", "DELETE"],
   })
 );
 

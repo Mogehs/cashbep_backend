@@ -96,15 +96,16 @@ export const verifyUser = catchAsyncError(async (req, res, next) => {
 
   // Generate JWT token
   const token = user.getJWTToken();
-  
-  res.cookie("token", token, { 
-    httpOnly: true, 
-    secure: process.env.NODE_ENV === "production", 
-    sameSite: "strict",
-    maxAge: 60 * 60 * 1000
+
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    domain: "https://bmx-atventure.vercel.app",
+    maxAge: 60 * 60 * 1000,
   });
 
-  res.status(200).json({ message: "User verified successfully",user });
+  res.status(200).json({ message: "User verified successfully", user });
 });
 
 export const forgotPasswordOTP = catchAsyncError(async (req, res, next) => {
@@ -119,7 +120,7 @@ export const forgotPasswordOTP = catchAsyncError(async (req, res, next) => {
   }
 
   const otp = await user.generateOTP();
-  console.log("otp is .....",otp);
+  console.log("otp is .....", otp);
 
   const name = user.name;
   const subject = "OTP for Password Reset";
@@ -172,7 +173,9 @@ export const resetPassword = catchAsyncError(async (req, res, next) => {
   }
 
   if (!user.otp) {
-    return next(new Errorhandler("OTP not verified. Please verify your OTP first.", 400));
+    return next(
+      new Errorhandler("OTP not verified. Please verify your OTP first.", 400)
+    );
   }
 
   user.password = password;
@@ -248,7 +251,7 @@ export const getReferredUserData = catchAsyncError(async (req, res, next) => {
 
 export const Login = catchAsyncError(async (req, res, next) => {
   const { email, password } = req.body;
-  
+
   const user = await UserModel.findOne({ email }).select("+password");
   if (!user) {
     return next(new Errorhandler("User Not Found", 404));
@@ -262,7 +265,12 @@ export const Login = catchAsyncError(async (req, res, next) => {
   // Check if the user is still pending verification
   if (user.status === "pending") {
     await UserModel.findByIdAndDelete(user._id); // Delete the user
-    return next(new Errorhandler("Your account was not verified and has been deleted. Please sign up again.", 403));
+    return next(
+      new Errorhandler(
+        "Your account was not verified and has been deleted. Please sign up again.",
+        403
+      )
+    );
   }
 
   // Generate token for verified users
