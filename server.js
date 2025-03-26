@@ -19,8 +19,8 @@ const PORT = process.env.PORT || 5000;
 app.use(express.json());
 app.use(
   cors({
-    // origin: "https://bmx-atventure.vercel.app",
-    origin: process.env.FRONT_END_URL,
+    origin: "https://bmx-atventure.vercel.app",
+    // origin: process.env.FRONT_END_URL,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE"],
   })
