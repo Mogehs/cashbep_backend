@@ -78,13 +78,11 @@ export const verifyUser = catchAsyncError(async (req, res, next) => {
     return next(new Errorhandler("Invalid or expired OTP", 400));
   }
 
-  // Update user verification status
   user.otp = undefined;
   user.otpExpires = undefined;
   user.status = "verified";
   await user.save();
 
-  // Assign referral points ONLY after verification
   if (user.referredBy) {
     const referredByUser = await UserModel.findById(user.referredBy);
     if (referredByUser) {
@@ -94,20 +92,25 @@ export const verifyUser = catchAsyncError(async (req, res, next) => {
     }
   }
 
-  // Generate JWT token
-  const token = user.getJWTToken();
-
-  // Correct cookie settings (domain without https://)
-  res.cookie("token", token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
-    domain: "bmx-atventure.vercel.app", // Correct domain format
-    maxAge: 60 * 60 * 1000,
+  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    expiresIn: "15d",
   });
 
-  res.status(200).json({ message: "User verified successfully", user });
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production", 
+    sameSite: "None",
+    domain: process.env.COOKIE_DOMAIN || "bmx-atventure.vercel.app",
+    maxAge: 15 * 24 * 60 * 60 * 1000,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "User verified successfully",
+    user,
+  });
 });
+
 
 export const forgotPasswordOTP = catchAsyncError(async (req, res, next) => {
   const { email } = req.body;
@@ -258,21 +261,17 @@ export const Login = catchAsyncError(async (req, res, next) => {
     return next(new Errorhandler("Please provide email and password", 400));
   }
 
-  // 2. Find user with password
   const user = await UserModel.findOne({ email }).select("+password +status");
   if (!user) {
-    return next(new Errorhandler("Invalid Email or Password", 401)); // Generic message for security
+    return next(new Errorhandler("Invalid Email or Password", 401));
   }
 
-  // 3. Verify password
   const isMatch = await user.comparePassword(password);
   if (!isMatch) {
     return next(new Errorhandler("Invalid Email or Password", 401));
   }
 
-  // 4. Handle unverified users
   if (user.status === "pending") {
-    // Option 1: Resend verification instead of deleting
     const otp = await user.generateOTP();
     const subject = "Verify Your Email - BMX Adventure";
     const text = generateEmailTemplate(user.name, otp);
@@ -284,36 +283,30 @@ export const Login = catchAsyncError(async (req, res, next) => {
         403
       )
     );
-
-    // Option 2: If you must delete (not recommended):
-    // await UserModel.findByIdAndDelete(user._id);
-    // return next(new Errorhandler("Account not verified and has been deleted. Please sign up again.", 403));
   }
 
-  // 5. Generate token
-  const token = user.getJWTToken();
-
-  // 6. Set secure cookie
-  res.cookie("token", token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
-    domain: process.env.COOKIE_DOMAIN || "bmx-atventure.vercel.app",
-    maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days to match token expiry
+  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    expiresIn: "15d",
   });
 
-  // 7. Remove sensitive data before sending response
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    domain: process.env.COOKIE_DOMAIN || "bmx-atventure.vercel.app",
+    sameSite: "None",
+  });
+
   user.password = undefined;
   user.otp = undefined;
   user.otpExpires = undefined;
 
-  // 8. Respond without token in body (since it's in cookie)
   res.status(200).json({
     success: true,
     message: "Login successful",
     user,
   });
 });
+
 
 export const Logout = catchAsyncError(async (req, res, next) => {
   res.cookie("token", null, {
@@ -595,4 +588,22 @@ export const convertReferredPoints = catchAsyncError(async (req, res, next) => {
   } catch (error) {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
+});
+
+export const uploadPaymentImage = catchAsyncError(async (req, res, next) => {
+  console.log("User from req:", req.user); // Debugging log
+
+  if (!req.user) {
+    return next(new Errorhandler("Please login first", 401));
+  }
+
+  const filePath = req.file?.path;
+  if (!filePath) {
+    return next(new Errorhandler("File is required", 400));
+  }
+
+  req.user.paymentImage = filePath;
+  await req.user.save();
+
+  res.status(200).json({ success: true, message: "Uploaded successfully", file: filePath });
 });

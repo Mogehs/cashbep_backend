@@ -14,10 +14,12 @@ import {
   resetPassword,
   Signup,
   updatePass,
+  uploadPaymentImage,
   verifyOTP,
   verifyUser,
 } from "../Controller/UserController.js";
 import { isUserLoggedin } from "../Utils/Auth.js";
+import upload from "../MiddleWare/multerConfig.js";
 
 const Router = express.Router();
 
@@ -34,6 +36,8 @@ Router.post("/investment", isUserLoggedin, investment);
 Router.put("/convert-points/:id", isUserLoggedin, convertPoints);
 Router.put("/refConvert-points/:id", isUserLoggedin, convertReferredPoints);
 Router.get("/users", isUserLoggedin, getallusers);
+
+Router.post("/uploadPaymentImage", upload.single('paymentImage'), isUserLoggedin, uploadPaymentImage);
 
 Router.post("/forgot-password-otp",forgotPasswordOTP);
 Router.post("/verify-otp",verifyOTP);
