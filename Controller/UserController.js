@@ -67,74 +67,47 @@ const generateEmailTemplate = (name, otp) => `
 export const verifyUser = catchAsyncError(async (req, res, next) => {
   const { email, otp } = req.body;
 
-  // 1. Enhanced input validation
-  if (!email?.trim() || !otp?.trim()) {
-    return next(new Errorhandler("Email and OTP are required", 400));
-  }
+  const user = await UserModel.findOne({ email });
+  if (!user) return next(new Errorhandler("User not found", 404));
 
-  // 2. Find user with necessary fields
-  const user = await UserModel.findOne({ email })
-    .select('+otp +otpExpires +status +referredBy +password');
-  
-  if (!user) {
-    return next(new Errorhandler("User not found with this email", 404));
-  }
-
-  // 3. Check verification status first to avoid unnecessary OTP verification
   if (user.status === "verified") {
     return next(new Errorhandler("User is already verified", 400));
   }
 
-  // 4. Verify OTP with additional checks
-  if (!user.otp || !user.otpExpires) {
-    return next(new Errorhandler("No active OTP found", 400));
+  if (!user.verifyOTP(otp)) {
+    return next(new Errorhandler("Invalid or expired OTP", 400));
   }
 
-  if (user.otpExpires < Date.now()) {
-    return next(new Errorhandler("OTP has expired", 400));
-  }
-
-  if (user.otp !== otp) {
-    return next(new Errorhandler("Invalid OTP", 400));
-  }
-
-  // 5. Update user status and clear OTP
-  user.status = "verified";
   user.otp = undefined;
   user.otpExpires = undefined;
+  user.status = "verified";
+  await user.save();
 
-  // 6. Process referral if exists
   if (user.referredBy) {
-    await UserModel.findByIdAndUpdate(
-      user.referredBy,
-      {
-        $push: {
-          referredPoints: {
-            userId: user._id,
-            points: 1000,
-            date: new Date()
-          }
-        }
-      },
-      { new: true }
-    );
+    const referredByUser = await UserModel.findById(user.referredBy);
+    if (referredByUser) {
+      referredByUser.referredPoints = referredByUser.referredPoints || [];
+      referredByUser.referredPoints.push({ userId: user._id, points: 1000 });
+      await referredByUser.save();
+    }
   }
 
-  const token = user.getJWTToken();
+  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    expiresIn: "15d",
+  });
 
-  const userData = {
-    _id: user._id,
-    name: user.name,
-    email: user.email,
-    status: user.status,
-    createdAt: user.createdAt,
-  };
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production", 
+    sameSite: "None",
+    domain: process.env.COOKIE_DOMAIN || "bmx-atventure.vercel.app",
+    maxAge: 15 * 24 * 60 * 60 * 1000,
+  });
 
   res.status(200).json({
     success: true,
-    message: "Account verified successfully",
-    token,
-    user: userData, 
+    message: "User verified successfully",
+    user,
   });
 });
 
@@ -288,45 +261,16 @@ export const Login = catchAsyncError(async (req, res, next) => {
     return next(new Errorhandler("Please provide email and password", 400));
   }
 
-  // 2. Find user with password field
-  const user = await UserModel.findOne({ email }).select("+password +status +loginAttempts +lockUntil");
-  
-  // 3. Check if account is locked
-  if (user?.lockUntil && user.lockUntil > Date.now()) {
-    const retryAfter = Math.ceil((user.lockUntil - Date.now()) / 1000);
-    return next(new Errorhandler(
-      `Account temporarily locked. Try again in ${retryAfter} seconds`, 
-      423 // Locked status code
-    ));
-  }
-
-  // 4. Verify user exists
+  const user = await UserModel.findOne({ email }).select("+password +status");
   if (!user) {
     return next(new Errorhandler("Invalid Email or Password", 401));
   }
 
-  // 5. Verify password
   const isMatch = await user.comparePassword(password);
   if (!isMatch) {
-    // Increment failed attempts
-    user.loginAttempts += 1;
-    
-    // Lock account after 5 failed attempts
-    if (user.loginAttempts >= 5) {
-      user.lockUntil = Date.now() + 30 * 60 * 1000; // 30 minute lock
-      await user.save();
-      
-      return next(new Errorhandler(
-        "Too many failed attempts. Account locked for 30 minutes",
-        423
-      ));
-    }
-    
-    await user.save();
     return next(new Errorhandler("Invalid Email or Password", 401));
   }
 
-  // 6. Check email verification status
   if (user.status === "pending") {
     const otp = await user.generateOTP();
     const subject = "Verify Your Email - BMX Adventure";
@@ -341,37 +285,24 @@ export const Login = catchAsyncError(async (req, res, next) => {
     );
   }
 
-  // 7. Successful login - generate token
   const token = user.getJWTToken();
-  console.log("Login token....",token);
-
-  // 8. Reset login attempts and lock status
-  user.loginAttempts = 0;
-  user.lockUntil = undefined;
-  await user.save();
-
-  // 9. Set secure HTTP-only cookie
-  res.cookie('token', token, {
+  res.cookie("token", token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "None",
   });
 
-  // 10. Remove sensitive data
   user.password = undefined;
   user.otp = undefined;
   user.otpExpires = undefined;
-  user.loginAttempts = undefined;
-  user.lockUntil = undefined;
 
   res.status(200).json({
     success: true,
     message: "Login successful",
-    token,
     user,
   });
 });
+
 
 export const Logout = catchAsyncError(async (req, res, next) => {
   res.cookie("token", null, {
@@ -656,13 +587,13 @@ export const convertReferredPoints = catchAsyncError(async (req, res, next) => {
 });
 
 export const uploadPaymentImage = catchAsyncError(async (req, res, next) => {
-console.log("api is running.....")
+  console.log("User from req:", req.user); // Debugging log
+
   if (!req.user) {
     return next(new Errorhandler("Please login first", 401));
   }
 
   const filePath = req.file?.path;
-  console.log("file path .....",filePath)
   if (!filePath) {
     return next(new Errorhandler("File is required", 400));
   }
