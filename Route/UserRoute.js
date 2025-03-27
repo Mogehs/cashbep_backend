@@ -18,26 +18,26 @@ import {
   verifyOTP,
   verifyUser,
 } from "../Controller/UserController.js";
-import { isUserLoggedin } from "../Utils/Auth.js";
 import upload from "../MiddleWare/multerConfig.js";
+import { isUserLoggedIn } from "../Utils/Auth.js";
 
 const Router = express.Router();
 
 Router.post("/signup", Signup);
 Router.post("/verify-user", verifyUser);
 Router.post("/login", Login);
-Router.post("/logout", isUserLoggedin, Logout);
-Router.get("/profile", isUserLoggedin, Myprofile);
-Router.put("/updatePass", isUserLoggedin, updatePass);
-Router.get("/points", isUserLoggedin, DailyClaim);
-Router.get("/getRef", isUserLoggedin, getReferredUserData);
-Router.post("/feedBack", isUserLoggedin, addFeedback);
-Router.post("/investment", isUserLoggedin, investment);
-Router.put("/convert-points/:id", isUserLoggedin, convertPoints);
-Router.put("/refConvert-points/:id", isUserLoggedin, convertReferredPoints);
-Router.get("/users", isUserLoggedin, getallusers);
+Router.post("/logout", isUserLoggedIn, Logout);
+Router.get("/profile", isUserLoggedIn, Myprofile);
+Router.put("/updatePass", isUserLoggedIn, updatePass);
+Router.get("/points", isUserLoggedIn, DailyClaim);
+Router.get("/getRef", isUserLoggedIn, getReferredUserData);
+Router.post("/feedBack", isUserLoggedIn, addFeedback);
+Router.post("/investment", isUserLoggedIn, investment);
+Router.put("/convert-points/:id", isUserLoggedIn, convertPoints);
+Router.put("/refConvert-points/:id", isUserLoggedIn, convertReferredPoints);
+Router.get("/users", isUserLoggedIn, getallusers);
 
-Router.post("/uploadPaymentImage", upload.single('paymentImage'), isUserLoggedin, uploadPaymentImage);
+Router.post("/paymentImage",isUserLoggedIn ,upload.single("paymentImage"), uploadPaymentImage);
 
 Router.post("/forgot-password-otp",forgotPasswordOTP);
 Router.post("/verify-otp",verifyOTP);
